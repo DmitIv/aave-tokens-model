@@ -3,3 +3,4 @@ sdist
 __pycache__
 .venv
 .pytest_cache
+.idea
