@@ -12,3 +12,6 @@ def require(
 
     if not condition:
         raise Revert(description)
+
+
+NOT_ENOUGH_BALANCE = 'not enough balance'

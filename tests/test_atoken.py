@@ -2,40 +2,46 @@ from aave_tokens_model.core.tokens.atoken import deposit_steth
 from aave_tokens_model.core.tokens.steth import stake_eth
 
 
-def test_mint_rebase(steth, asteth, accounts):
+def test_mint_rebase(
+        steth, asteth,
+        fixed_stake_eth, fixed_deposit_steth,
+        accounts
+):
     a = accounts[0]
     b = accounts[1]
 
-    stake_eth(a, steth, 1000)
-    stake_eth(b, steth, 1000)
+    assert fixed_stake_eth(a, 1000) == 1000
+    assert fixed_stake_eth(b, 1000) == 1000
 
-    deposit_steth(a.sender, steth, asteth, 150)
-    deposit_steth(b.sender, steth, asteth, 11)
+    assert fixed_deposit_steth(a, 150) == 150
+    assert fixed_deposit_steth(b, 11) == 11
 
-    assert asteth.balance_of(a.sender) == 150
-    assert asteth.balance_of(b.sender) == 11
+    assert asteth.balance_of(a) == 150
+    assert asteth.balance_of(b) == 11
 
-    steth.rebase(steth.total_supply())
+    assert steth.total_supply() * 2 == steth.rebase_mul(2.0)
 
-    assert asteth.balance_of(a.sender) == 300
-    assert asteth.balance_of(b.sender) == 22
+    assert asteth.balance_of(a) == 300
+    assert asteth.balance_of(b) == 22
 
 
-def test_transfer_rebase(steth, asteth, accounts):
+def test_transfer_rebase(
+        steth, asteth,
+        fixed_stake_eth, fixed_deposit_steth,
+        accounts
+):
     c = accounts[2]
     d = accounts[3]
 
-    stake_eth(c, steth, 1000)
-    stake_eth(d, steth, 1000)
+    fixed_stake_eth(c, 1000)
+    fixed_stake_eth(d, 1000)
+    fixed_deposit_steth(c, 43)
+    fixed_deposit_steth(d, 77)
+    assert asteth.balance_of(c) == 43
+    assert asteth.balance_of(d) == 77
 
-    deposit_steth(c.sender, steth, asteth, 43)
-    deposit_steth(d.sender, steth, asteth, 77)
+    asteth.transfer(c, d, 13)
+    assert steth.total_supply() * 2 == steth.rebase_mul(2.0)
 
-    assert asteth.balance_of(c.sender) == 43
-    assert asteth.balance_of(d.sender) == 77
-
-    asteth.transfer(c, d.sender, 13)
-    steth.rebase(steth.total_supply())
-
-    assert asteth.balance_of(c.sender) == 60
-    assert asteth.balance_of(d.sender) == 90 * 2
+    assert asteth.balance_of(c) == 60
+    assert asteth.balance_of(d) == 90 * 2

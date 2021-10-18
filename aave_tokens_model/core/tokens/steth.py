@@ -1,156 +1,111 @@
-from typing import Dict
+from functools import lru_cache
 
 from aave_tokens_model.core.tokens.erc20 import ERC20
-from aave_tokens_model.core.utilities.restriction import require
 from aave_tokens_model.core.utilities.types import (
-    AddressT, MSG
+    AddressT
 )
 
 
 class StETH(ERC20):
+    """
+    StETH token.
+
+    self._total_supply == total shares
+    underlaying ERC20 token is equal to shares from contract.
+    """
+
     def __init__(self):
-        self._name: str = 'steth'
-        self._total_shares: float = 0
-        self._total_eth: float = 0
-        self._shares: Dict[AddressT, float] = {}
-        self._allowances: Dict[AddressT, Dict[AddressT, float]] = {}
+        super().__init__('stETH token', 'stETH')
+        self._pooled_eth: float = 0.0
 
-    def _shares2steth(self, shares_amount: float) -> float:
+    @property
+    def shares_to_steth(self) -> float:
+        """Get factor for shares to stETH conversion."""
+        if self._total_supply == 0:
+            return 0
+        return self._pooled_eth / self._total_supply
+
+    @property
+    def steth_to_shares(self) -> float:
+        """Get factor for stETH to shares conversion."""
+        if self._pooled_eth == 0:
+            return 0
+        return self._total_supply / self._pooled_eth
+
+    def _shares_to_steth(self, shares_amount: float) -> float:
         """Convert amount of shares to amount of stETH."""
-        return shares_amount * self._total_eth / self._total_shares
+        return shares_amount * self.shares_to_steth
 
-    def _steth2shares(self, steth_amount: float) -> float:
+    def _steth_to_shares(self, steth_amount: float) -> float:
         """Convert amount of stETH to amount of shares."""
-        return steth_amount * self._total_shares / self._total_eth
+        return steth_amount * self.steth_to_shares
 
-    def rebase(self, amount: float) -> float:
+    def _rebase(self, shift: float) -> float:
+        """Shift pooled eth with shift value."""
+        self._pooled_eth += shift
+        return self._pooled_eth
+
+    def rebase_mul(self, factor: float) -> float:
         """
-        Change total supply of token.
+        Change total supply of token with mul by factor.
 
         Return new amount.
         """
-        self._total_eth += amount
-        return self._total_eth
+        previous_total_supply = self._pooled_eth
+        new_total_supply = self._pooled_eth * factor
+        return self._rebase(new_total_supply - previous_total_supply)
 
-    @property
-    def name(self) -> str:
-        return self._name
-
-    @property
-    def symbol(self) -> str:
-        return self._name
+    def rebase_sft(self, shift: float) -> float:
+        """
+        Change total supply of token by adding shift.
+        """
+        return self._rebase(shift)
 
     def total_supply(self) -> float:
         """Get amount of stETH, always equal to underlying eth."""
-        return self._total_eth
+        return self._pooled_eth
 
     def balance_of(self, user: AddressT) -> float:
         """Get the balance of user in stETH."""
-        return self._shares2steth(self._shares.get(user, 0))
+        shares_of_user = super().balance_of(user)
+        return self._shares_to_steth(shares_of_user)
 
-    def transfer(self, msg: MSG, to: AddressT, value: float) -> bool:
+    def transfer(self, user: AddressT, to: AddressT, value: float) -> bool:
         """Transfer stETH from caller to the specific address."""
-        if value == 0:
-            return False
-        value_in_shares = self._steth2shares(value)
-        require(
-            self._shares.get(msg.sender, 0) >= value_in_shares,
-            'not enough balance'
-        )
-
-        self._shares[msg.sender] -= value_in_shares
-        self._shares[to] = self._shares.get(to, 0) + value_in_shares
-
+        value_in_shares = self._steth_to_shares(value)
+        super().transfer(user, to, value_in_shares)
         return True
-
-    def transfer_from(
-            self, msg: MSG, _from: AddressT, to: AddressT, value: int
-    ) -> float:
-        """Transfer stETH on behalf of from to the address."""
-        if value == 0:
-            return False
-        value_in_shares = self._steth2shares(value)
-        require(
-            self._allowances.get(_from, 0).get(
-                msg.sender, 0
-            ) >= value_in_shares,
-            'not enough allowance'
-        )
-        require(
-            self._shares.get(_from, 0) >= value_in_shares,
-            'not enough balance'
-        )
-
-        self._allowances[_from][msg.sender] -= value_in_shares
-        self._shares[_from] -= value_in_shares
-        self._shares[to] = self._shares.get(to, 0) + value_in_shares
-
-        return self._allowances[_from][msg.sender]
-
-    def approve(self, msg: MSG, spender: AddressT, value: int) -> bool:
-        """Allow spender to withdraw from caller account."""
-        value_in_shares = self._steth2shares(value)
-        require(
-            self._shares.get(msg.sender, 0) >= value_in_shares,
-            'not enough balance'
-        )
-
-        caller_allowances = self._allowances.setdefault(msg.sender, {})
-        caller_allowances[spender] = caller_allowances.get(
-            spender, 0
-        ) + value_in_shares
-
-        return True
-
-    def allowance(self, owner: AddressT, spender: AddressT) -> float:
-        """Returns the amount which is allowed to withdraw from owner."""
-        return self._allowances.get(owner, {}).get(spender, 0)
 
     def mint(self, user: AddressT, value: float) -> float:
         """Mint new tokens for user."""
-        if value == 0:
-            return self._shares.get(user, 0)
-        if self._total_shares == 0:
-            self._shares[user] = value
-            self._total_shares += value
-            self._total_eth += value
+        if self._pooled_eth == 0:
+            self._pooled_eth += value
+            return super().mint(user, value)
 
-            return self._shares[user]
-
-        value_in_shares = self._steth2shares(value)
-
-        self._shares[user] = self._shares.get(user, 0) + value_in_shares
-        self._total_shares += value_in_shares
-        self._total_eth += value
-
-        return self._shares[user]
+        value_in_shares = self._steth_to_shares(value)
+        self._pooled_eth += value
+        return super().mint(user, value_in_shares)
 
     def burn(self, user: AddressT, value: float) -> float:
         """Burn value of tokens from user balance."""
-        if value == 0:
-            return self._shares.get(user, 0)
-        value_in_shares = self._steth2shares(value)
-
-        require(
-            self._shares.get(user, 0) >= value_in_shares,
-            'not enough balance'
-        )
-
-        self._shares[user] -= value_in_shares
-        self._total_eth -= value
-        self._total_shares -= value_in_shares
-
-        return self._shares[user]
+        value_in_shares = self._steth_to_shares(value)
+        return super().burn(user, value_in_shares)
 
     def get_pooled_steth_by_shares(self, shares_amount: float) -> float:
         """Convert shares to steth."""
-        return self._shares2steth(shares_amount)
+        return self._shares_to_steth(shares_amount)
 
     def get_shares_by_pooled_steth(self, steth_amount: float) -> float:
         """Convert steth to shares."""
-        return self._steth2shares(steth_amount)
+        return self._steth_to_shares(steth_amount)
 
 
-def stake_eth(msg: MSG, steth: StETH, value: int) -> float:
+@lru_cache(1)
+def get_steth() -> StETH:
+    """Get cached instance of StETH."""
+    return StETH()
+
+
+def stake_eth(steth: StETH, user: AddressT, value: int) -> float:
     """Stake ethereum and get StETH, return amount of minted shares."""
-    return steth.mint(msg.sender, value)
+    return steth.mint(user, value)

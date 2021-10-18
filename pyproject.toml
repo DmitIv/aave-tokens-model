@@ -7,9 +7,13 @@ license = "MIT"
 
 [tool.poetry.dependencies]
 python = "^3.8"
+loguru = "^0.5.3"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.5"
+
+[tool.poetry.scripts]
+aave_market_model = "aave_tokens_model.__main__:main"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

@@ -1,85 +1,84 @@
-from aave_tokens_model.core.tokens.atoken import (
-    repay_steth, borrow_steth, deposit_steth
-)
-from aave_tokens_model.core.tokens.steth import stake_eth
-
-
-def test_case_1(steth, asteth, debtsteth, accounts):
+def test_case_1(
+        steth, asteth, debtsteth,
+        fixed_stake_eth, fixed_deposit_steth,
+        fixed_borrow_steth, fixed_repay_steth,
+        accounts
+):
     """Deposit -> Borrow -> Rebase -> Repay -> Deposit -> Rebase"""
     a = accounts[0]
     b = accounts[1]
     c = accounts[2]
 
-    stake_eth(a, steth, 1000)
-    stake_eth(b, steth, 1000)
+    assert fixed_stake_eth(a, 1000) == 1000
+    assert fixed_stake_eth(b, 1000) == 1000
 
-    deposit_steth(a.sender, steth, asteth, 500)
-    deposit_steth(b.sender, steth, asteth, 500)
+    assert fixed_deposit_steth(a, 500) == 500
+    assert fixed_deposit_steth(b, 500) == 500
 
-    borrow_steth(c, 500, steth, asteth, debtsteth)
+    assert fixed_borrow_steth(c, 500) == 500
 
-    assert steth.balance_of(a.sender) == 500
-    assert steth.balance_of(b.sender) == 500
-    assert steth.balance_of(c.sender) == 500
+    assert steth.balance_of(a) == 500
+    assert steth.balance_of(b) == 500
+    assert steth.balance_of(c) == 500
     assert steth.balance_of(asteth.address) == 500
 
-    assert asteth.balance_of(a.sender) == 500
-    assert asteth.balance_of(b.sender) == 500
+    assert asteth.balance_of(a) == 500
+    assert asteth.balance_of(b) == 500
 
-    assert debtsteth.balance_of(c.sender) == 500
+    assert debtsteth.balance_of(c) == 500
 
     # Rebase x2
-    steth.rebase(steth.total_supply())
+    assert steth.total_supply() * 2 == steth.rebase_mul(2.0)
 
-    assert steth.balance_of(a.sender) == 1000
-    assert steth.balance_of(b.sender) == 1000
-    assert steth.balance_of(c.sender) == 1000
+    assert steth.balance_of(a) == 1000
+    assert steth.balance_of(b) == 1000
+    assert steth.balance_of(c) == 1000
     assert steth.balance_of(asteth.address) == 1000
 
-    assert 500 < asteth.balance_of(a.sender) < 1000
-    assert 500 < asteth.balance_of(b.sender) < 1000
+    fair_sharing = 500 / 2
+    expected_asteth_balance = 1000 - fair_sharing
+    assert asteth.balance_of(a) == expected_asteth_balance
+    assert asteth.balance_of(b) == expected_asteth_balance
 
-    a_before_repaying = asteth.balance_of(a.sender)
-    b_before_repaying = asteth.balance_of(b.sender)
+    assert debtsteth.balance_of(c) == 500
 
-    assert debtsteth.balance_of(c.sender) == 500
+    # Repay
+    assert fixed_repay_steth(c, 500) == 0
 
-    repay_steth(c, 500, steth, asteth, debtsteth)
-
-    assert steth.balance_of(a.sender) == 1000
-    assert steth.balance_of(b.sender) == 1000
-    assert steth.balance_of(c.sender) == 500
+    assert steth.balance_of(a) == 1000
+    assert steth.balance_of(b) == 1000
+    assert steth.balance_of(c) == 500
     assert steth.balance_of(asteth.address) == 1500
 
-    assert a_before_repaying <= asteth.balance_of(a.sender) < 1000
-    assert b_before_repaying <= asteth.balance_of(b.sender) < 1000
+    expected_asteth_balance = asteth.total_supply() / 2
+    assert asteth.balance_of(a) == expected_asteth_balance
+    assert asteth.balance_of(b) == expected_asteth_balance
 
-    assert debtsteth.balance_of(c.sender) == 0
+    assert debtsteth.balance_of(c) == 0
 
     d = accounts[3]
 
-    stake_eth(d, steth, 100)
-    deposit_steth(d.sender, steth, asteth, 50)
+    fixed_stake_eth(d, 100)
+    fixed_deposit_steth(d, 50)
 
-    assert steth.balance_of(a.sender) == 1000
-    assert steth.balance_of(b.sender) == 1000
-    assert steth.balance_of(c.sender) == 500
+    assert steth.balance_of(a) == 1000
+    assert steth.balance_of(b) == 1000
+    assert steth.balance_of(c) == 500
     assert steth.balance_of(asteth.address) == 1550
 
-    assert a_before_repaying <= asteth.balance_of(a.sender) < 1000
-    assert b_before_repaying <= asteth.balance_of(b.sender) < 1000
-    assert steth.balance_of(d.sender) < asteth.balance_of(d.sender)
+    assert asteth.balance_of(a) == expected_asteth_balance
+    assert asteth.balance_of(b) == expected_asteth_balance
+    assert steth.balance_of(d) == asteth.balance_of(d)
 
     # Rebase x2
-    steth.rebase(steth.total_supply())
+    steth.rebase_mul(2.0)
 
-    assert steth.balance_of(a.sender) == 2000
-    assert steth.balance_of(b.sender) == 2000
-    assert steth.balance_of(c.sender) == 1000
-    assert steth.balance_of(d.sender) == 100
+    assert steth.balance_of(a) == 2000
+    assert steth.balance_of(b) == 2000
+    assert steth.balance_of(c) == 1000
+    assert steth.balance_of(d) == 100
     assert steth.balance_of(asteth.address) == 3100
 
-    assert 1000 < asteth.balance_of(a.sender) < 2000
-    assert 1000 < asteth.balance_of(b.sender) < 2000
-    # !!
-    assert steth.balance_of(d.sender) < asteth.balance_of(d.sender)
+    assert asteth.balance_of(a) == expected_asteth_balance * 2 < 2000
+    assert asteth.balance_of(b) == expected_asteth_balance * 2 < 2000
+    assert steth.balance_of(d) == asteth.balance_of(d)
