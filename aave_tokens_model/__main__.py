@@ -1,18 +1,38 @@
-from functools import partial
 from typing import Optional
 
+from aave_tokens_model.core.logging import get_logger
 from aave_tokens_model.core.tokens import (
     get_asteth, get_steth, get_debtsteth,
     deposit_steth, stake_eth, borrow_steth, repay_steth
 )
-from aave_tokens_model.core.utilities import generate_address
+from aave_tokens_model.core.utilities import generate_address, AddressT
 
-stake = partial(stake_eth, get_steth())
-deposit = partial(deposit_steth, get_steth(), get_asteth())
-borrow = partial(borrow_steth, get_steth(), get_debtsteth(), get_asteth())
-repay = partial(repay_steth, get_steth(), get_debtsteth(), get_asteth())
+Logger = get_logger()
 
 
+@Logger.function_log
+def stake(user: AddressT, value: float) -> float:
+    return stake_eth(get_steth(), user, value)
+
+
+@Logger.function_log
+def deposit(user: AddressT, value: float) -> float:
+    return deposit_steth(get_steth(), get_asteth(), user, value)
+
+
+@Logger.function_log
+def borrow(user: AddressT, value: float) -> float:
+    return borrow_steth(
+        get_steth(), get_debtsteth(), get_asteth(), user, value
+    )
+
+
+@Logger.function_log
+def repay(user: AddressT, value: float) -> float:
+    return repay_steth(get_steth(), get_debtsteth(), get_asteth(), user, value)
+
+
+@Logger.function_log
 def rebase(factor: float) -> float:
     return get_steth().rebase_mul(factor)
 
