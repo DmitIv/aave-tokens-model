@@ -1,5 +1,5 @@
-from typing import Optional
 from functools import partial
+from typing import Optional
 
 from aave_tokens_model.core.tokens import (
     get_asteth, get_steth, get_debtsteth,
@@ -33,9 +33,9 @@ class Account:
 
 
 def main():
-    get_steth().on_logging()
-    get_asteth().on_logging()
-    get_debtsteth().on_logging()
+    get_steth().switch_up_logger(True)
+    get_asteth().switch_up_logger(True)
+    get_debtsteth().switch_up_logger(True)
 
     get_new_acc = Account
 
