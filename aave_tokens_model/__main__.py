@@ -116,12 +116,10 @@ def main():
     d = get_new_acc(steth_amount=1000)
     all_accounts['d'] = d
     deposit(d.address, 500)
-    print(f'Sum of shares: {sum(get_asteth()._balances.values())}')  # noqa
     print(_single_block('Deposit #2'))
 
     # Rebase #3
     rebase(2.0)
-    print(f'Internal balances: {repr(get_asteth()._balances)}')
     print(_single_block('Rebase #3'))
 
     # Borrow #2

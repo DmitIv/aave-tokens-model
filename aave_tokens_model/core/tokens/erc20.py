@@ -4,7 +4,7 @@ ERC20 token.
 import sys
 from collections import defaultdict
 from functools import wraps
-from typing import Dict
+from typing import Dict, List
 
 from loguru import logger
 
@@ -31,22 +31,22 @@ class ERC20:
             return (
                 f'{time:HH:mm:ss} '
                 f'<b>{file_name}:{line}</b>::\n'
-                f'<r>{msg}</r>'
+                f'<r>{msg}</r>\n'
             )
 
-        token_name = record['extra'].get('symbol', 'unknown-token')
-        function = record['function']
+        extra = record.get('extra', {})
+        stage = extra.get('stage', 'BEFORE')
+        color = 'g'
+        if stage == 'BEFORE':
+            color = 'e'
+        token_name = extra.get('symbol', 'unknown-token')
+        function = extra.get('function', 'unknown-function')
         msg = record['message']
 
         return (
-            f'{token_name}:{function}::\n'
-            f'{msg}'
+            f'<{color}>{token_name}:{function}:{stage}</{color}>\n'
+            f'{msg}\n'
         )
-
-    @staticmethod
-    def _filter_log_msg(record) -> bool:
-        """Filter log message."""
-        return record['level'] == 'INFO'
 
     def __init__(self, name: str, symbol: str, verbose: bool = False) -> None:
         """Prepare new token."""
@@ -63,18 +63,34 @@ class ERC20:
     def _setup_logger(self) -> None:
         self._logger.remove()
         if self._verbose:
+            self._logger.bind(name=self._name, symbol=self._symbol)
             self._logger.add(
                 sys.stdout, level='INFO',
-                format=self._format_log_msg,
-                filter=self._filter_log_msg
+                format=self._format_log_msg
             )
-            self._logger.bind(name=self._name, symbol=self._symbol)
 
     def _log(action):
         @wraps(action)
         def _handler(self, *args, **kwargs):
-            self._print_log(action, *args, **kwargs)
-            return action(self, *args, **kwargs)
+            with self._logger.contextualize(
+                    symbol=self._symbol,
+                    function=getattr(action, '__name__', 'unknown-function'),
+                    stage='BEFORE'
+            ):
+                self._logger.info('\n'.join(
+                    self._print_log_before(action, *args, **kwargs)
+                ))
+
+            result = action(self, *args, **kwargs)
+            with self._logger.contextualize(
+                    symbol=self._symbol,
+                    function=getattr(action, '__name__', 'unknown-function'),
+                    stage='AFTER'
+            ):
+                self._logger.info('\n'.join(
+                    self._prepare_log_after(action, *args, **kwargs)
+                ))
+            return result
 
         return _handler
 
@@ -93,18 +109,33 @@ class ERC20:
         """Get address of token."""
         return self._address
 
-    def _print_log(self, action, *args, **kwargs) -> None:
+    def _print_log_before(self, action, *args, **kwargs) -> List[str]:
         args = ' '.join([str(arg) for arg in args])
         kwargs = ' '.join([
             f'{str(key)} = {str(value)}'
             for key, value in kwargs.items()
         ])
-        delimiter = '=' * 10
-        self._logger.info(
-            f'args: {args}\n'
-            f'kwargs: {kwargs}\n'
-            f'{delimiter}'
-        )
+        delimiter = '=' * 20
+        return [
+            f'args: {args}',
+            f'kwargs: {kwargs}',
+            f'total supply after = {self._total_supply}',
+            f'{delimiter}',
+        ]
+
+    def _prepare_log_after(self, action, *args, **kwargs) -> List[str]:
+        args = ' '.join([str(arg) for arg in args])
+        kwargs = ' '.join([
+            f'{str(key)} = {str(value)}'
+            for key, value in kwargs.items()
+        ])
+        delimiter = '=' * 20
+        return [
+            f'args: {args}',
+            f'kwargs: {kwargs}',
+            f'total supply = {self._total_supply}',
+            f'{delimiter}',
+        ]
 
     def switch_up_logger(self, with_logging: bool) -> None:
         """Switch-up logging"""
