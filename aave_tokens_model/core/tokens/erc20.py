@@ -1,55 +1,24 @@
 """
 ERC20 token.
 """
-import sys
 from collections import defaultdict
-from functools import wraps
-from typing import Dict, List
+from typing import Dict, Any, List
 
-from loguru import logger
-
+from aave_tokens_model.core.logging import Logged
 from aave_tokens_model.core.utilities import (
     AddressT, require, generate_address
 )
 from aave_tokens_model.core.utilities.restriction import NOT_ENOUGH_BALANCE
 
 
-class ERC20:
+class ERC20(Logged):
     """
     The most common ERC20 implementation.
     """
 
-    @staticmethod
-    def _format_log_msg(record) -> str:
-        """Format log message for using it with Loguru."""
-        if record.get('exception', None):
-            file_name = record['file'].name
-            line = record['line']
-            time = record['time']
-            msg = record['message']
-
-            return (
-                f'{time:HH:mm:ss} '
-                f'<b>{file_name}:{line}</b>::\n'
-                f'<r>{msg}</r>\n'
-            )
-
-        extra = record.get('extra', {})
-        stage = extra.get('stage', 'BEFORE')
-        color = 'g'
-        if stage == 'BEFORE':
-            color = 'e'
-        token_name = extra.get('symbol', 'unknown-token')
-        function = extra.get('function', 'unknown-function')
-        msg = record['message']
-
-        return (
-            f'<{color}>{token_name}:{function}:{stage}</{color}>\n'
-            f'{msg}\n'
-        )
-
     def __init__(self, name: str, symbol: str, verbose: bool = False) -> None:
         """Prepare new token."""
+        super().__init__(verbose)
         self._name = name
         self._symbol = symbol
         self._verbose = verbose
@@ -57,42 +26,31 @@ class ERC20:
 
         self._balances: Dict[AddressT, float] = defaultdict(lambda: 0)
         self._total_supply: float = 0
-        self._logger = logger
-        self._setup_logger()
 
-    def _setup_logger(self) -> None:
-        self._logger.remove()
-        if self._verbose:
-            self._logger.bind(name=self._name, symbol=self._symbol)
-            self._logger.add(
-                sys.stdout, level='INFO',
-                format=self._format_log_msg
-            )
+    def _get_context(self, function: str, stage: str) -> Dict[str, Any]:
+        context = super()._get_context(function, stage)
+        context['symbol'] = self._symbol
+        return context
 
-    def _log(action):
-        @wraps(action)
-        def _handler(self, *args, **kwargs):
-            with self._logger.contextualize(
-                    symbol=self._symbol,
-                    function=getattr(action, '__name__', 'unknown-function'),
-                    stage='BEFORE'
-            ):
-                self._logger.info('\n'.join(
-                    self._print_log_before(action, *args, **kwargs)
-                ))
+    def _prepare_log_before(self, action, *args, **kwargs) -> List[str]:
+        base_msg = super()._prepare_log_before(action, *args, **kwargs)
+        base_msg.append(base_msg[-1])
+        base_msg[-2] = f'total supply = {self._total_supply}'
+        return base_msg
 
-            result = action(self, *args, **kwargs)
-            with self._logger.contextualize(
-                    symbol=self._symbol,
-                    function=getattr(action, '__name__', 'unknown-function'),
-                    stage='AFTER'
-            ):
-                self._logger.info('\n'.join(
-                    self._prepare_log_after(action, *args, **kwargs)
-                ))
-            return result
+    def _prepare_log_after(self, action, *args, **kwargs) -> List[str]:
+        base_msg = super()._prepare_log_after(action, *args, **kwargs)
+        base_msg.append(base_msg[-1])
+        base_msg[-2] = f'new total supply = {self._total_supply}'
+        return base_msg
 
-        return _handler
+    @staticmethod
+    def _format_log_msg(record) -> str:
+        msg = Logged._format_log_msg(record)
+        extra = record.get('extra', {})
+        token_symbol = extra.get('symbol', 'unknown-token')
+        start = msg.find('>')
+        return msg[:start + 1] + f'{token_symbol}:' + msg[start + 1:]
 
     @property
     def name(self) -> str:
@@ -109,39 +67,6 @@ class ERC20:
         """Get address of token."""
         return self._address
 
-    def _print_log_before(self, action, *args, **kwargs) -> List[str]:
-        args = ' '.join([str(arg) for arg in args])
-        kwargs = ' '.join([
-            f'{str(key)} = {str(value)}'
-            for key, value in kwargs.items()
-        ])
-        delimiter = '=' * 20
-        return [
-            f'args: {args}',
-            f'kwargs: {kwargs}',
-            f'total supply after = {self._total_supply}',
-            f'{delimiter}',
-        ]
-
-    def _prepare_log_after(self, action, *args, **kwargs) -> List[str]:
-        args = ' '.join([str(arg) for arg in args])
-        kwargs = ' '.join([
-            f'{str(key)} = {str(value)}'
-            for key, value in kwargs.items()
-        ])
-        delimiter = '=' * 20
-        return [
-            f'args: {args}',
-            f'kwargs: {kwargs}',
-            f'total supply = {self._total_supply}',
-            f'{delimiter}',
-        ]
-
-    def switch_up_logger(self, with_logging: bool) -> None:
-        """Switch-up logging"""
-        self._verbose = with_logging
-        self._setup_logger()
-
     def total_supply(self) -> float:
         """Get total amount of minted tokens."""
         return self._total_supply
@@ -150,7 +75,7 @@ class ERC20:
         """Get amount of tokens held by the specific user."""
         return self._balances[user]
 
-    @_log
+    @Logged.with_log
     def transfer(self, user: AddressT, to: AddressT, value: float) -> bool:
         """
         Transfer an amount from user to the specific address.
@@ -163,14 +88,14 @@ class ERC20:
 
         return True
 
-    @_log
+    @Logged.with_log
     def mint(self, user: AddressT, value: float) -> float:
         """Mint new tokens for user; return new balance."""
         self._balances[user] += value
         self._total_supply += value
         return self._balances[user]
 
-    @_log
+    @Logged.with_log
     def burn(self, user: AddressT, value: float) -> float:
         """Burn tokens for user; return new balance."""
         require(self._balances[user] >= value, NOT_ENOUGH_BALANCE)

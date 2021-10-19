@@ -1,5 +1,7 @@
 from functools import lru_cache
+from typing import List
 
+from aave_tokens_model.core.logging import Logged
 from aave_tokens_model.core.tokens.erc20 import ERC20
 from aave_tokens_model.core.utilities.types import (
     AddressT
@@ -17,6 +19,22 @@ class StETH(ERC20):
     def __init__(self):
         super().__init__('stETH token', 'stETH')
         self._pooled_eth: float = 0.0
+
+    def _prepare_log_after(self, action, *args, **kwargs) -> List[str]:
+        msg = super()._prepare_log_after(action, *args, **kwargs)
+        msg[-2] = (
+            f'new total shares = {self._total_supply}; '
+            f'new total supply = {self._pooled_eth}'
+        )
+        return msg
+
+    def _prepare_log_before(self, action, *args, **kwargs) -> List[str]:
+        msg = super()._prepare_log_after(action, *args, **kwargs)
+        msg[-2] = (
+            f'total shares = {self._total_supply}; '
+            f'total supply = {self._pooled_eth}'
+        )
+        return msg
 
     @property
     def shares_to_steth(self) -> float:
@@ -70,12 +88,14 @@ class StETH(ERC20):
         shares_of_user = super().balance_of(user)
         return self._shares_to_steth(shares_of_user)
 
+    @Logged.with_log
     def transfer(self, user: AddressT, to: AddressT, value: float) -> bool:
         """Transfer stETH from caller to the specific address."""
         value_in_shares = self._steth_to_shares(value)
         super().transfer(user, to, value_in_shares)
         return True
 
+    @Logged.with_log
     def mint(self, user: AddressT, value: float) -> float:
         """Mint new tokens for user."""
         if self._pooled_eth == 0:
@@ -86,6 +106,7 @@ class StETH(ERC20):
         self._pooled_eth += value
         return super().mint(user, value_in_shares)
 
+    @Logged.with_log
     def burn(self, user: AddressT, value: float) -> float:
         """Burn value of tokens from user balance."""
         value_in_shares = self._steth_to_shares(value)
@@ -106,6 +127,6 @@ def get_steth() -> StETH:
     return StETH()
 
 
-def stake_eth(steth: StETH, user: AddressT, value: int) -> float:
+def stake_eth(steth: StETH, user: AddressT, value: float) -> float:
     """Stake ethereum and get StETH, return amount of minted shares."""
     return steth.mint(user, value)
